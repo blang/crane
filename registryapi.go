@@ -66,6 +66,8 @@ func (r *RegistryAPI) registerEndPoints() {
 	r.router.HandleFunc("/v1/images/{image_id}/checksum", r.handlePutImageChecksum).Methods("PUT")
 
 	r.router.HandleFunc("/v1/images/{image_id}/ancestry", r.handleGetAncestry).Methods("GET")
+	r.router.HandleFunc("/v1/users/", r.handlePostUser).Methods("POST")
+	r.router.HandleFunc("/v1/users/", r.handleGetUser).Methods("GET")
 	//
 }
 
@@ -77,6 +79,23 @@ func (r *RegistryAPI) handleDummy(w http.ResponseWriter, req *http.Request) {
 		log.Printf("Body length: %s", len(b))
 	}
 
+}
+
+// Handles User Registration: Returns 400 to redirect docker to GET /v1/users
+// Route: POST /v1/users
+func (r *RegistryAPI) handlePostUser(w http.ResponseWriter, req *http.Request) {
+	w.WriteHeader(http.StatusBadRequest)
+	w.Write([]byte("\"Username or email already exists\""))
+	r.handleDummy(w, req)
+}
+
+// Handles User Login: Returns 200 because Auth is handled by proxy
+// Route: GET /v1/users
+func (r *RegistryAPI) handleGetUser(w http.ResponseWriter, req *http.Request) {
+	// Check Authorization Header
+	// Status: 200 : Login successful
+	// Status: 401 : Wrong login
+	// Status: 403 : Account inactive
 }
 
 type ImageRef struct {
@@ -96,6 +115,12 @@ func (r *RegistryAPI) handlePutRepository(w http.ResponseWriter, req *http.Reque
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	auth := req.Header.Get("Authorization")
+	if auth == "" || auth == "Basic Og==" {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	var imageRefs []ImageRef
 	err := json.NewDecoder(req.Body).Decode(&imageRefs)
 	if err != nil {
@@ -112,7 +137,7 @@ func (r *RegistryAPI) handlePutRepository(w http.ResponseWriter, req *http.Reque
 		return
 	}
 	w.Header().Set("WWW-Authenticate", "Token signature=HN2IR0O98XB1GEJA,repository=\"test/busybox\",access=write")
-	w.Header().Set("X-Docker-Endpoints", "127.0.0.1:5001")
+	w.Header().Set("X-Docker-Endpoints", "127.0.0.1:5001") //TODO: Make http host or config
 	w.Header().Set("X-Docker-Token", "Token signature=HN2IR0O98XB1GEJA,repository=\"test/busybox\",access=write")
 	log.Printf("Put Repository Images: %s:%s %q", namespace, repository, imageRefs)
 }
@@ -347,6 +372,11 @@ func (r *RegistryAPI) handleGetRepositoryImages(w http.ResponseWriter, req *http
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
+
+	w.Header().Set("WWW-Authenticate", "Token signature=READTOKEN,repository=\"test/busybox\",access=read")
+	w.Header().Set("X-Docker-Endpoints", "127.0.0.1:5001") //TODO: Make http host or config
+	w.Header().Set("X-Docker-Token", "Token signature=READTOKEN,repository=\"test/busybox\",access=read")
+
 	var imageRefList []*ImageRef
 	for _, imageID := range images {
 		imageRefList = append(imageRefList, &ImageRef{ID: imageID})
