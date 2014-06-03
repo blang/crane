@@ -11,7 +11,10 @@ func main() {
 	dataDir := flag.String("datadir", "/tmp/registry", "Data directory")
 	flag.Parse()
 
-	registry := NewRegistry(*dataDir)
+	metaStorage := NewMemMetaStorage()
+	fileStorage := NewLocalFileStorage(*dataDir)
+
+	registry := NewRegistry(metaStorage, fileStorage)
 	api := NewRegistryAPI(registry)
 
 	log.Printf("Starting server listening on %q", *listen)
