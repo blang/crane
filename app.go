@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"github.com/blang/crane/store"
 	"log"
 	"net/http"
 )
@@ -11,11 +12,11 @@ func main() {
 	dataDir := flag.String("datadir", "/tmp/registry", "Data directory")
 	flag.Parse()
 
-	metaStorage := NewMemMetaStorage()
-	fileStorage := NewLocalFileStorage(*dataDir)
+	metaStorage := store.NewMemMetaStorage()
+	fileStorage := store.NewLocalFileStorage(*dataDir)
 	authenticator := NewLocalAuthenticator()
-
-	registry := NewRegistry(metaStorage, fileStorage, authenticator)
+	proxyStore := store.NewProxyStore(metaStorage, fileStorage)
+	registry := NewRegistry(proxyStore, authenticator)
 	api := NewRegistryAPI(registry)
 
 	log.Printf("Starting server listening on %q", *listen)

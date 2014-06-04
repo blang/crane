@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/blang/crane/store"
 	"io"
 	"log"
 )
@@ -37,73 +38,71 @@ type ContainerConfig struct {
 }
 
 type Registry struct {
-	metaStorage   MetaStorage
-	fileStorage   FileStorage
+	store         store.Store
 	authenticator Authenticator
 }
 
-func NewRegistry(metaStorage MetaStorage, fileStorage FileStorage, authenticator Authenticator) *Registry {
+func NewRegistry(store store.Store, authenticator Authenticator) *Registry {
 	return &Registry{
-		metaStorage:   metaStorage,
-		fileStorage:   fileStorage,
+		store:         store,
 		authenticator: authenticator,
 	}
 }
 
 func (r *Registry) SetImageJSON(imageID string, json string) error {
-	return r.metaStorage.SetImageJSON(imageID, json)
+	return r.store.SetImageJSON(imageID, json)
 }
 func (r *Registry) ImageJSON(imageID string) (string, bool) {
-	return r.metaStorage.ImageJSON(imageID)
+	return r.store.ImageJSON(imageID)
 }
 func (r *Registry) SetChecksum(imageID string, checksum string) error {
-	return r.metaStorage.SetChecksum(imageID, checksum)
+	return r.store.SetChecksum(imageID, checksum)
 }
 func (r *Registry) Checksum(imageID string) (string, bool) {
-	return r.metaStorage.Checksum(imageID)
+	return r.store.Checksum(imageID)
 }
 
 func (r *Registry) Size(imageID string) (int64, bool) {
-	return r.metaStorage.Size(imageID)
+	return r.store.Size(imageID)
 }
 
-func (r *Registry) Layer(imageID string) (ReadCloseSeeker, error) {
-	return r.fileStorage.Layer(imageID)
+func (r *Registry) Layer(imageID string) (store.ReadCloseSeeker, error) {
+	return r.store.Layer(imageID)
 }
 func (r *Registry) SetLayer(imageID string, imageJSON string, reader io.ReadCloser) error {
-	checksum, size, err := r.fileStorage.SetLayer(imageID, imageJSON, reader)
+	checksum, size, err := r.store.SetLayer(imageID, imageJSON, reader)
 	if err == nil {
 		//TODO: Check for errors
 		log.Printf("Put Layer of image %s with checksum %s", imageJSON, checksum)
-		r.metaStorage.SetChecksum(imageID, checksum)
-		r.metaStorage.SetSize(imageID, size)
+		r.store.SetChecksum(imageID, checksum)
+		r.store.SetSize(imageID, size)
 	}
 	return err
 }
 
 func (r *Registry) Tag(namespace string, repository string, tag string) (string, bool) {
-	return r.metaStorage.Tag(namespace, repository, tag)
+	return r.store.Tag(namespace, repository, tag)
 }
 
 func (r *Registry) Tags(namespace string, repository string) (map[string]string, bool) {
-	return r.metaStorage.Tags(namespace, repository)
+	return r.store.Tags(namespace, repository)
 }
 func (r *Registry) SetTag(namespace string, repository string, imageID string, tag string) error {
-	return r.metaStorage.SetTag(namespace, repository, imageID, tag)
+	return r.store.SetTag(namespace, repository, imageID, tag)
 }
 
 func (r *Registry) SetImages(namespace string, repository string, images []string) error {
-	return r.metaStorage.SetImages(namespace, repository, images)
+	return r.store.SetImages(namespace, repository, images)
 }
 func (r *Registry) Images(namespace string, repository string) ([]string, error) {
-	return r.metaStorage.Images(namespace, repository)
+	return r.store.Images(namespace, repository)
 }
 func (r *Registry) Ancestry(imageID string) ([]string, error) {
-	return r.metaStorage.Ancestry(imageID)
+	return r.store.Ancestry(imageID)
 }
 
 func (r *Registry) SetAncestry(imageID string, parentImageID string) error {
-	return r.metaStorage.SetAncestry(imageID, parentImageID)
+	return r.store.SetAncestry(imageID, parentImageID)
 }
 
 func (r *Registry) Authenticator() Authenticator {

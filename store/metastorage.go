@@ -1,4 +1,4 @@
-package main
+package store
 
 // Interface for meta storage
 type MetaStorage interface {
