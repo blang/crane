@@ -13,8 +13,9 @@ func main() {
 
 	metaStorage := NewMemMetaStorage()
 	fileStorage := NewLocalFileStorage(*dataDir)
+	authenticator := NewLocalAuthenticator()
 
-	registry := NewRegistry(metaStorage, fileStorage)
+	registry := NewRegistry(metaStorage, fileStorage, authenticator)
 	api := NewRegistryAPI(registry)
 
 	log.Printf("Starting server listening on %q", *listen)

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"github.com/gorilla/mux"
 	"io/ioutil"
 	"log"
@@ -86,16 +88,27 @@ func (r *RegistryAPI) handleDummy(w http.ResponseWriter, req *http.Request) {
 func (r *RegistryAPI) handlePostUser(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusBadRequest)
 	w.Write([]byte("\"Username or email already exists\""))
+	//TODO: Maybe give the authenticator a try on this
 	r.handleDummy(w, req)
 }
 
 // Handles User Login: Returns 200 because Auth is handled by proxy
+// Status: 200 : Login successful
+// Status: 401 : Wrong login
+// Status: 403 : Account inactive
 // Route: GET /v1/users
 func (r *RegistryAPI) handleGetUser(w http.ResponseWriter, req *http.Request) {
-	// Check Authorization Header
-	// Status: 200 : Login successful
-	// Status: 401 : Wrong login
-	// Status: 403 : Account inactive
+	user, pass, valid := authHeader(req)
+	if !valid {
+		log.Println("Authheader not valid")
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	if !r.registry.Authenticator().Authenticate(user, pass) {
+		log.Println("Authentication failed")
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
 }
 
 type ImageRef struct {
@@ -108,15 +121,19 @@ func (r ImageRef) String() string {
 }
 
 func (r *RegistryAPI) handlePutRepository(w http.ResponseWriter, req *http.Request) {
+	log.Println("Put Repository")
 	vars := mux.Vars(req)
 	namespace, found1 := vars["namespace"]
 	repository, found2 := vars["repository"]
 	if !(found1 && found2) {
+		log.Println("Put Repository namespace, repository url wrong")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	auth := req.Header.Get("Authorization")
-	if auth == "" || auth == "Basic Og==" {
+
+	user, pass, valid := authHeader(req)
+	if !valid {
+		log.Printf("Not valid header")
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -131,14 +148,21 @@ func (r *RegistryAPI) handlePutRepository(w http.ResponseWriter, req *http.Reque
 	for _, imageRef := range imageRefs {
 		imageIds = append(imageIds, imageRef.ID)
 	}
+
+	token, granted := r.registry.Authenticator().Authorize(user, pass, namespace, repository, imageIds, O_WRONLY)
+	if !granted {
+		log.Printf("Not granted %s", repository)
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	setTokenHeaders(w, token, namespace, repository, O_WRONLY)
+
 	err = r.registry.SetImages(namespace, repository, imageIds)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	w.Header().Set("WWW-Authenticate", "Token signature=HN2IR0O98XB1GEJA,repository=\"test/busybox\",access=write")
 	w.Header().Set("X-Docker-Endpoints", "127.0.0.1:5001") //TODO: Make http host or config
-	w.Header().Set("X-Docker-Token", "Token signature=HN2IR0O98XB1GEJA,repository=\"test/busybox\",access=write")
 	log.Printf("Put Repository Images: %s:%s %q", namespace, repository, imageRefs)
 }
 
@@ -180,6 +204,16 @@ func (r *RegistryAPI) handlePutImageJson(w http.ResponseWriter, req *http.Reques
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	token, validToken := tokenHeader(req)
+	if !validToken {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	if !r.registry.Authenticator().HasPermPushImage(token, imageID) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	_, found = r.registry.ImageJSON(imageID)
 	if found {
 		w.WriteHeader(http.StatusConflict)
@@ -212,6 +246,16 @@ func (r *RegistryAPI) handlePutImageChecksum(w http.ResponseWriter, req *http.Re
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	token, validToken := tokenHeader(req)
+	if !validToken {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	if !r.registry.Authenticator().HasPermPushImage(token, imageID) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	regChecksum, found := r.registry.Checksum(imageID)
 	if !found {
 		w.WriteHeader(http.StatusConflict)
@@ -248,6 +292,16 @@ func (r *RegistryAPI) handlePutImageLayer(w http.ResponseWriter, req *http.Reque
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	token, validToken := tokenHeader(req)
+	if !validToken {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	if !r.registry.Authenticator().HasPermPushImage(token, imageID) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	imageJSON, found := r.registry.ImageJSON(imageID)
 	if !found {
 		w.WriteHeader(http.StatusNotFound)
@@ -270,6 +324,16 @@ func (r *RegistryAPI) handleGetImageLayer(w http.ResponseWriter, req *http.Reque
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	token, validToken := tokenHeader(req)
+	if !validToken {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	if !r.registry.Authenticator().HasPermPullImage(token, imageID) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	reader, err := r.registry.Layer(imageID)
 	if err != nil {
 		log.Printf("Could not set layer: %v", err)
@@ -294,7 +358,18 @@ func (r *RegistryAPI) handlePutRepositoryTag(w http.ResponseWriter, req *http.Re
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	token, validToken := tokenHeader(req)
+	if !validToken {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	imageID := strings.Trim(string(bImageID), "\" ")
+	if !r.registry.Authenticator().HasPermPushTag(token, namespace, repository, imageID, tags) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	log.Printf("Set Tag: %s/%s: %s:%s", namespace, repository, imageID, tags)
 	r.registry.SetTag(namespace, repository, imageID, tags)
 }
@@ -308,6 +383,18 @@ func (r *RegistryAPI) handleGetRepositoryTag(w http.ResponseWriter, req *http.Re
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
+	token, validToken := tokenHeader(req)
+	if !validToken {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	if !r.registry.Authenticator().HasPermPullTag(token, namespace, repository, tag) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	imageID, found := r.registry.Tag(namespace, repository, tag)
 	if !found {
 		log.Printf("Get Tag not found: %s/%s: %s", namespace, repository, tag)
@@ -327,6 +414,18 @@ func (r *RegistryAPI) handleGetRepositoryTags(w http.ResponseWriter, req *http.R
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
+	token, validToken := tokenHeader(req)
+	if !validToken {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	if !r.registry.Authenticator().HasPermPullTags(token, namespace, repository) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	imageIDs, found := r.registry.Tags(namespace, repository)
 	if !found {
 		w.WriteHeader(http.StatusNotFound)
@@ -349,6 +448,9 @@ func (r *RegistryAPI) handlePutRepositoryImages(w http.ResponseWriter, req *http
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
+	// No Auth here because it's an empty endpoint result of dockers strange design.
+
 	b, _ := ioutil.ReadAll(req.Body)
 	bodyStr := string(b)
 	log.Printf("Put Repository Images: %s:%s %v", namespace, repository, string(b))
@@ -356,6 +458,7 @@ func (r *RegistryAPI) handlePutRepositoryImages(w http.ResponseWriter, req *http
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	w.WriteHeader(http.StatusBadRequest)
 
 }
 
@@ -367,15 +470,29 @@ func (r *RegistryAPI) handleGetRepositoryImages(w http.ResponseWriter, req *http
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	images, err := r.registry.Images(namespace, repository)
-	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
+	user, pass, valid := authHeader(req)
+	if !valid {
+		log.Printf("Not valid header")
+		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
-	w.Header().Set("WWW-Authenticate", "Token signature=READTOKEN,repository=\"test/busybox\",access=read")
+	images, err := r.registry.Images(namespace, repository)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		//TODO: Maybe security problem because guessing is possible
+		return
+	}
+
+	token, granted := r.registry.Authenticator().Authorize(user, pass, namespace, repository, images, O_RDONLY)
+	if !granted {
+		log.Printf("Not granted %s", repository)
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	setTokenHeaders(w, token, namespace, repository, O_RDONLY)
+
 	w.Header().Set("X-Docker-Endpoints", "127.0.0.1:5001") //TODO: Make http host or config
-	w.Header().Set("X-Docker-Token", "Token signature=READTOKEN,repository=\"test/busybox\",access=read")
 
 	var imageRefList []*ImageRef
 	for _, imageID := range images {
@@ -392,6 +509,16 @@ func (r *RegistryAPI) handleGetAncestry(w http.ResponseWriter, req *http.Request
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	token, validToken := tokenHeader(req)
+	if !validToken {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	if !r.registry.Authenticator().HasPermPullImage(token, imageID) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	ancestryArr, err := r.registry.Ancestry(imageID)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
@@ -399,4 +526,72 @@ func (r *RegistryAPI) handleGetAncestry(w http.ResponseWriter, req *http.Request
 	}
 	log.Printf("Ancestry for image %s: %v", imageID, ancestryArr)
 	json.NewEncoder(w).Encode(&ancestryArr)
+}
+
+func authHeader(req *http.Request) (string, string, bool) {
+	const authBasic = "Basic "
+	auth := req.Header.Get("Authorization")
+	log.Printf("Header is %s", auth)
+	if !strings.HasPrefix(auth, authBasic) {
+		log.Println("Has no prefx")
+		return "", "", false
+	}
+	str, err := base64.StdEncoding.DecodeString(auth[len(authBasic):])
+	if err != nil {
+		return "", "", false
+	}
+	log.Printf("Auth string is: %s", str)
+
+	creds := strings.SplitN(string(str), ":", 2)
+	if len(creds) != 2 {
+		return "", "", false
+	}
+	return creds[0], creds[1], true
+}
+
+func tokenHeader(req *http.Request) (string, bool) {
+	const PREFIX = "Token Token "
+	const SIGPREFIX = "signature="
+	auth := req.Header.Get("Authorization")
+	if auth == "" {
+		return "", false
+	}
+
+	if !strings.HasPrefix(auth, PREFIX) {
+		return "", false
+	}
+
+	auth = strings.TrimPrefix(auth, PREFIX)
+	parts := strings.Split(auth, ",")
+	if len(parts) != 3 {
+		return "", false
+	}
+
+	signature := ""
+	for _, part := range parts {
+		if strings.HasPrefix(part, SIGPREFIX) {
+			signature = part[len(SIGPREFIX):]
+		}
+	}
+	if signature == "" {
+		return "", false
+	}
+
+	return signature, true
+}
+
+func setTokenHeaders(w http.ResponseWriter, token string, namespace string, repository string, mode Mode) {
+	modeStr := ""
+	switch mode {
+	case O_RDONLY:
+		modeStr = "read"
+	case O_WRONLY:
+		modeStr = "write"
+	default:
+		modeStr = "read"
+	}
+
+	tokenHeader := fmt.Sprintf("Token signature=%s,repository=\"%s/%s\",access=%s", token, namespace, repository, modeStr)
+	w.Header().Set("WWW-Authenticate", tokenHeader)
+	w.Header().Set("X-Docker-Token", tokenHeader)
 }

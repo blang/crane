@@ -37,16 +37,16 @@ type ContainerConfig struct {
 }
 
 type Registry struct {
-	metaStorage MetaStorage
-	fileStorage FileStorage
-	imageMap    map[string]*Image //TODO: Not Threadsafe
+	metaStorage   MetaStorage
+	fileStorage   FileStorage
+	authenticator Authenticator
 }
 
-func NewRegistry(metaStorage MetaStorage, fileStorage FileStorage) *Registry {
+func NewRegistry(metaStorage MetaStorage, fileStorage FileStorage, authenticator Authenticator) *Registry {
 	return &Registry{
-		metaStorage: metaStorage,
-		fileStorage: fileStorage,
-		imageMap:    make(map[string]*Image),
+		metaStorage:   metaStorage,
+		fileStorage:   fileStorage,
+		authenticator: authenticator,
 	}
 }
 
@@ -104,4 +104,8 @@ func (r *Registry) Ancestry(imageID string) ([]string, error) {
 
 func (r *Registry) SetAncestry(imageID string, parentImageID string) error {
 	return r.metaStorage.SetAncestry(imageID, parentImageID)
+}
+
+func (r *Registry) Authenticator() Authenticator {
+	return r.authenticator
 }
