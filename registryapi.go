@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/blang/crane/auth"
 	"github.com/gorilla/mux"
 	"io/ioutil"
 	"log"
@@ -149,13 +150,13 @@ func (r *RegistryAPI) handlePutRepository(w http.ResponseWriter, req *http.Reque
 		imageIds = append(imageIds, imageRef.ID)
 	}
 
-	token, granted := r.registry.Authenticator().Authorize(user, pass, namespace, repository, imageIds, O_WRONLY)
+	token, granted := r.registry.Authenticator().Authorize(user, pass, namespace, repository, imageIds, auth.O_WRONLY)
 	if !granted {
 		log.Printf("Not granted %s", repository)
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	setTokenHeaders(w, token, namespace, repository, O_WRONLY)
+	setTokenHeaders(w, token, namespace, repository, auth.O_WRONLY)
 
 	err = r.registry.SetImages(namespace, repository, imageIds)
 	if err != nil {
@@ -192,7 +193,7 @@ func (r *RegistryAPI) handleGetImageJson(w http.ResponseWriter, req *http.Reques
 		w.Write(JsonMsgImageNotFound)
 		return
 	}
-	w.Header().Set("X-Docker-Payload-Checksum", "sha256:"+checksum) //TODO: format: [sha256: ... ]
+	w.Header().Set("X-Docker-Payload-Checksum", "sha256:"+checksum)
 	w.Header().Set("X-Docker-Size", strconv.FormatInt(size, 10))
 	w.Write([]byte(imageJSON))
 }
@@ -477,13 +478,13 @@ func (r *RegistryAPI) handleGetRepositoryImages(w http.ResponseWriter, req *http
 		return
 	}
 
-	token, granted := r.registry.Authenticator().Authorize(user, pass, namespace, repository, images, O_RDONLY)
+	token, granted := r.registry.Authenticator().Authorize(user, pass, namespace, repository, images, auth.O_RDONLY)
 	if !granted {
 		log.Printf("Not granted %s", repository)
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	setTokenHeaders(w, token, namespace, repository, O_RDONLY)
+	setTokenHeaders(w, token, namespace, repository, auth.O_RDONLY)
 
 	w.Header().Set("X-Docker-Endpoints", "127.0.0.1:5001") //TODO: Make http host or config
 
@@ -573,12 +574,12 @@ func tokenHeader(req *http.Request) (string, bool) {
 	return signature, true
 }
 
-func setTokenHeaders(w http.ResponseWriter, token string, namespace string, repository string, mode Mode) {
+func setTokenHeaders(w http.ResponseWriter, token string, namespace string, repository string, mode auth.Mode) {
 	modeStr := ""
 	switch mode {
-	case O_RDONLY:
+	case auth.O_RDONLY:
 		modeStr = "read"
-	case O_WRONLY:
+	case auth.O_WRONLY:
 		modeStr = "write"
 	default:
 		modeStr = "read"

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/blang/crane/auth"
 	"github.com/blang/crane/store"
 	"io"
 	"log"
@@ -39,10 +40,10 @@ type ContainerConfig struct {
 
 type Registry struct {
 	store         store.Store
-	authenticator Authenticator
+	authenticator auth.Authenticator
 }
 
-func NewRegistry(store store.Store, authenticator Authenticator) *Registry {
+func NewRegistry(store store.Store, authenticator auth.Authenticator) *Registry {
 	return &Registry{
 		store:         store,
 		authenticator: authenticator,
@@ -112,7 +113,7 @@ func (r *Registry) SetTmpAncestry(imageID string, parentImageID string) error {
 	return r.store.SetTmpAncestry(imageID, parentImageID)
 }
 
-func (r *Registry) Authenticator() Authenticator {
+func (r *Registry) Authenticator() auth.Authenticator {
 	return r.authenticator
 }
 

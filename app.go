@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"github.com/blang/crane/auth"
 	"github.com/blang/crane/store"
 	"log"
 	"net/http"
@@ -14,7 +15,7 @@ func main() {
 
 	metaStorage := store.NewMemMetaStorage()
 	fileStorage := store.NewLocalFileStorage(*dataDir)
-	authenticator := NewLocalAuthenticator()
+	authenticator := auth.NewLocalAuthenticator()
 	proxyStore := store.NewProxyStore(metaStorage, fileStorage)
 	registry := NewRegistry(proxyStore, authenticator)
 	api := NewRegistryAPI(registry)
