@@ -163,7 +163,7 @@ func (r *RegistryAPI) handlePutRepository(w http.ResponseWriter, req *http.Reque
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	w.Header().Set("X-Docker-Endpoints", "127.0.0.1:5001") //TODO: Make http host or config
+	w.Header().Set("X-Docker-Endpoints", req.Host) //TODO: Make http host or config
 	log.Printf("Put Repository Images: %s:%s %q", namespace, repository, imageRefs)
 }
 
@@ -486,7 +486,7 @@ func (r *RegistryAPI) handleGetRepositoryImages(w http.ResponseWriter, req *http
 	}
 	setTokenHeaders(w, token, namespace, repository, auth.O_RDONLY)
 
-	w.Header().Set("X-Docker-Endpoints", "127.0.0.1:5001") //TODO: Make http host or config
+	w.Header().Set("X-Docker-Endpoints", req.Host) //TODO: Make http host or config
 
 	var imageRefList []*ImageRef
 	for _, imageID := range images {
