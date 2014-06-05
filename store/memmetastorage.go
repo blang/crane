@@ -16,44 +16,101 @@ func NewRepository() *Repository {
 }
 
 type MemMetaStorage struct {
-	imageJsonMap     map[string]string
-	imageChecksumMap map[string]string
-	imageSizeMap     map[string]int64
-	imageAncestryMap map[string]string
-	repositoryMap    map[string]*Repository
+	imageTmpJsonMap     map[string]string
+	imageTmpChecksumMap map[string]string
+	imageTmpSizeMap     map[string]int64
+	imageJsonMap        map[string]string
+	imageChecksumMap    map[string]string
+	imageSizeMap        map[string]int64
+	imageAncestryMap    map[string]string
+	imageTmpAncestryMap map[string]string
+	repositoryMap       map[string]*Repository
 }
 
 func NewMemMetaStorage() *MemMetaStorage {
 	return &MemMetaStorage{
-		imageJsonMap:     make(map[string]string),
-		imageChecksumMap: make(map[string]string),
-		imageSizeMap:     make(map[string]int64),
-		imageAncestryMap: make(map[string]string),
-		repositoryMap:    make(map[string]*Repository),
-		// repositoryImageMap: make(map[string][]string),
+		imageTmpJsonMap:     make(map[string]string),
+		imageTmpChecksumMap: make(map[string]string),
+		imageTmpSizeMap:     make(map[string]int64),
+		imageJsonMap:        make(map[string]string),
+		imageChecksumMap:    make(map[string]string),
+		imageSizeMap:        make(map[string]int64),
+		imageAncestryMap:    make(map[string]string),
+		imageTmpAncestryMap: make(map[string]string),
+		repositoryMap:       make(map[string]*Repository),
 	}
 }
 
-func (m *MemMetaStorage) SetImageJSON(imageID string, json string) error {
+func (m *MemMetaStorage) CommitTmpImage(imageID string) bool {
+	json, found := m.imageTmpJsonMap[imageID]
+	if !found {
+		return false
+	}
+	checksum, found := m.imageTmpChecksumMap[imageID]
+	if !found {
+		return false
+	}
+	size, found := m.imageTmpSizeMap[imageID]
+	if !found {
+		return false
+	}
+	ancestry, ancestryFound := m.imageTmpAncestryMap[imageID]
+
+	// Insert
 	m.imageJsonMap[imageID] = json
+	m.imageChecksumMap[imageID] = checksum
+	m.imageSizeMap[imageID] = size
+	if ancestryFound {
+		m.imageAncestryMap[imageID] = ancestry
+	}
+
+	// Remove tmp
+	delete(m.imageTmpJsonMap, imageID)
+	delete(m.imageTmpChecksumMap, imageID)
+	delete(m.imageTmpSizeMap, imageID)
+	if ancestryFound {
+		delete(m.imageTmpAncestryMap, imageID)
+	}
+	return true
+}
+func (m *MemMetaStorage) DiscardTmpImage(imageID string) bool {
+	// Remove tmp
+	delete(m.imageTmpJsonMap, imageID)
+	delete(m.imageTmpChecksumMap, imageID)
+	delete(m.imageTmpSizeMap, imageID)
+	delete(m.imageTmpAncestryMap, imageID)
+	return true
+}
+
+func (m *MemMetaStorage) SetTmpImageJSON(imageID string, json string) error {
+	m.imageTmpJsonMap[imageID] = json
 	return nil
 }
 func (m *MemMetaStorage) ImageJSON(imageID string) (string, bool) {
 	json, found := m.imageJsonMap[imageID]
 	return json, found
 }
+func (m *MemMetaStorage) TmpImageJSON(imageID string) (string, bool) {
+	json, found := m.imageTmpJsonMap[imageID]
+	return json, found
+}
 
-func (m *MemMetaStorage) SetChecksum(imageID string, checksum string) error {
-	m.imageChecksumMap[imageID] = checksum
+func (m *MemMetaStorage) SetTmpChecksum(imageID string, checksum string) error {
+	m.imageTmpChecksumMap[imageID] = checksum
 	return nil
+}
+
+func (m *MemMetaStorage) TmpChecksum(imageID string) (string, bool) {
+	chs, found := m.imageTmpChecksumMap[imageID]
+	return chs, found
 }
 func (m *MemMetaStorage) Checksum(imageID string) (string, bool) {
 	chs, found := m.imageChecksumMap[imageID]
 	return chs, found
 }
 
-func (m *MemMetaStorage) SetSize(imageID string, size int64) error {
-	m.imageSizeMap[imageID] = size
+func (m *MemMetaStorage) SetTmpSize(imageID string, size int64) error {
+	m.imageTmpSizeMap[imageID] = size
 	return nil
 }
 func (m *MemMetaStorage) Size(imageID string) (int64, bool) {
@@ -122,7 +179,7 @@ func (m *MemMetaStorage) Ancestry(imageID string) ([]string, error) {
 	return ancestryArr, nil
 }
 
-func (m *MemMetaStorage) SetAncestry(imageID string, parentImageID string) error {
-	m.imageAncestryMap[imageID] = parentImageID
+func (m *MemMetaStorage) SetTmpAncestry(imageID string, parentImageID string) error {
+	m.imageTmpAncestryMap[imageID] = parentImageID
 	return nil
 }

@@ -13,5 +13,7 @@ type ReadCloseSeeker interface {
 // Interface for file storage like layers
 type FileStorage interface {
 	Layer(imageID string) (ReadCloseSeeker, error)
-	SetLayer(imageID string, imageJSON string, r io.ReadCloser) (string, int64, error) // Closes r
+	SetTmpLayer(imageID string, imageJSON string, r io.ReadCloser) (string, int64, error) // Closes r
+	CommitTmpLayer(imageID string) bool
+	DiscardTmpLayer(imageID string) bool
 }

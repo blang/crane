@@ -33,9 +33,9 @@ func (s *LocalFileStorage) Layer(imageID string) (ReadCloseSeeker, error) {
 	return f, nil
 }
 
-func (s *LocalFileStorage) SetLayer(imageID string, imageJSON string, r io.ReadCloser) (string, int64, error) {
-	layerPath := path.Join(s.dataDir, imageID+"_layer")
-	w, err := os.OpenFile(layerPath, os.O_RDWR|os.O_CREATE, 0600)
+func (s *LocalFileStorage) SetTmpLayer(imageID string, imageJSON string, r io.ReadCloser) (string, int64, error) {
+	layerTmpPath := path.Join(s.dataDir, imageID+"_layer.tmp")
+	w, err := os.OpenFile(layerTmpPath, os.O_RDWR|os.O_CREATE, 0600)
 	if err != nil {
 		return "", 0, err
 	}
@@ -70,4 +70,27 @@ func (s *LocalFileStorage) SetLayer(imageID string, imageJSON string, r io.ReadC
 	hashBytes := hash.Sum(nil)
 	mdStr := hex.EncodeToString(hashBytes)
 	return mdStr, read, nil
+}
+
+func (s *LocalFileStorage) CommitTmpLayer(imageID string) bool {
+	layerTmpPath := path.Join(s.dataDir, imageID+"_layer.tmp")
+	layerPath := path.Join(s.dataDir, imageID+"_layer")
+	r, err := os.OpenFile(layerTmpPath, os.O_RDONLY, 0600)
+	if err != nil {
+		return false
+	}
+	r.Close()
+	err = os.Rename(layerTmpPath, layerPath)
+	if err != nil {
+		return false
+	}
+	return true
+}
+func (s *LocalFileStorage) DiscardTmpLayer(imageID string) bool {
+	layerTmpPath := path.Join(s.dataDir, imageID+"_layer.tmp")
+	err := os.Remove(layerTmpPath)
+	if err != nil {
+		return false
+	}
+	return true
 }

@@ -49,15 +49,18 @@ func NewRegistry(store store.Store, authenticator Authenticator) *Registry {
 	}
 }
 
-func (r *Registry) SetImageJSON(imageID string, json string) error {
-	return r.store.SetImageJSON(imageID, json)
+func (r *Registry) SetTmpImageJSON(imageID string, json string) error {
+	return r.store.SetTmpImageJSON(imageID, json)
 }
+
 func (r *Registry) ImageJSON(imageID string) (string, bool) {
 	return r.store.ImageJSON(imageID)
 }
-func (r *Registry) SetChecksum(imageID string, checksum string) error {
-	return r.store.SetChecksum(imageID, checksum)
+
+func (r *Registry) TmpImageJSON(imageID string) (string, bool) {
+	return r.store.TmpImageJSON(imageID)
 }
+
 func (r *Registry) Checksum(imageID string) (string, bool) {
 	return r.store.Checksum(imageID)
 }
@@ -69,13 +72,14 @@ func (r *Registry) Size(imageID string) (int64, bool) {
 func (r *Registry) Layer(imageID string) (store.ReadCloseSeeker, error) {
 	return r.store.Layer(imageID)
 }
-func (r *Registry) SetLayer(imageID string, imageJSON string, reader io.ReadCloser) error {
-	checksum, size, err := r.store.SetLayer(imageID, imageJSON, reader)
+
+func (r *Registry) SetTmpLayer(imageID string, imageJSON string, reader io.ReadCloser) error {
+	checksum, size, err := r.store.SetTmpLayer(imageID, imageJSON, reader)
 	if err == nil {
 		//TODO: Check for errors
-		log.Printf("Put Layer of image %s with checksum %s", imageJSON, checksum)
-		r.store.SetChecksum(imageID, checksum)
-		r.store.SetSize(imageID, size)
+		log.Printf("Put Tmp Layer of image %s with checksum %s", imageJSON, checksum)
+		r.store.SetTmpChecksum(imageID, checksum)
+		r.store.SetTmpSize(imageID, size)
 	}
 	return err
 }
@@ -87,6 +91,7 @@ func (r *Registry) Tag(namespace string, repository string, tag string) (string,
 func (r *Registry) Tags(namespace string, repository string) (map[string]string, bool) {
 	return r.store.Tags(namespace, repository)
 }
+
 func (r *Registry) SetTag(namespace string, repository string, imageID string, tag string) error {
 	return r.store.SetTag(namespace, repository, imageID, tag)
 }
@@ -94,17 +99,49 @@ func (r *Registry) SetTag(namespace string, repository string, imageID string, t
 func (r *Registry) SetImages(namespace string, repository string, images []string) error {
 	return r.store.SetImages(namespace, repository, images)
 }
+
 func (r *Registry) Images(namespace string, repository string) ([]string, error) {
 	return r.store.Images(namespace, repository)
 }
+
 func (r *Registry) Ancestry(imageID string) ([]string, error) {
 	return r.store.Ancestry(imageID)
 }
 
-func (r *Registry) SetAncestry(imageID string, parentImageID string) error {
-	return r.store.SetAncestry(imageID, parentImageID)
+func (r *Registry) SetTmpAncestry(imageID string, parentImageID string) error {
+	return r.store.SetTmpAncestry(imageID, parentImageID)
 }
 
 func (r *Registry) Authenticator() Authenticator {
 	return r.authenticator
+}
+
+func (r *Registry) ValidateAndCommitLayer(imageID string, checksum string) bool {
+	tmpChs, found := r.store.TmpChecksum(imageID)
+	if !found {
+		r.discardImage(imageID)
+		return false
+	}
+	if tmpChs != checksum {
+		r.discardImage(imageID)
+		return false
+	}
+	succ := r.store.CommitTmpLayer(imageID)
+	if !succ {
+		r.discardImage(imageID)
+		return false
+	}
+	succ = r.store.CommitTmpImage(imageID)
+	if !succ {
+		r.discardImage(imageID)
+		return false
+	}
+	return true
+
+}
+
+func (r *Registry) discardImage(imageID string) bool {
+	r1 := r.store.DiscardTmpImage(imageID)
+	r2 := r.store.DiscardTmpLayer(imageID)
+	return (r1 && r2)
 }

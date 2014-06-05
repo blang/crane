@@ -229,13 +229,13 @@ func (r *RegistryAPI) handlePutImageJson(w http.ResponseWriter, req *http.Reques
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	err = r.registry.SetImageJSON(imageID, string(bImageJSON))
+	err = r.registry.SetTmpImageJSON(imageID, string(bImageJSON))
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	if newImage.Parent != "" {
-		r.registry.SetAncestry(imageID, newImage.Parent)
+		r.registry.SetTmpAncestry(imageID, newImage.Parent)
 	}
 }
 
@@ -256,12 +256,6 @@ func (r *RegistryAPI) handlePutImageChecksum(w http.ResponseWriter, req *http.Re
 		return
 	}
 
-	regChecksum, found := r.registry.Checksum(imageID)
-	if !found {
-		w.WriteHeader(http.StatusConflict)
-		w.Write(JsonMsgImageMissingChecksum)
-		return
-	}
 	checksumHeader := req.Header.Get("X-Docker-Checksum-Payload")
 	if checksumHeader == "" || len(checksumHeader) < 8 { // Naive check if checksum might be ok
 		w.WriteHeader(http.StatusBadRequest)
@@ -277,8 +271,7 @@ func (r *RegistryAPI) handlePutImageChecksum(w http.ResponseWriter, req *http.Re
 	startIndex := found256 + len("sha256:")
 	checksum := checksumHeader[startIndex:]
 
-	if regChecksum != checksum {
-		log.Printf("Checksum wrong: expected %s got %s", regChecksum, checksum)
+	if !r.registry.ValidateAndCommitLayer(imageID, checksum) {
 		w.WriteHeader(http.StatusConflict)
 		w.Write(JsonMsgImageChecksumMismatch)
 		return
@@ -302,13 +295,13 @@ func (r *RegistryAPI) handlePutImageLayer(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	imageJSON, found := r.registry.ImageJSON(imageID)
+	imageJSON, found := r.registry.TmpImageJSON(imageID)
 	if !found {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	err := r.registry.SetLayer(imageID, imageJSON, req.Body)
+	err := r.registry.SetTmpLayer(imageID, imageJSON, req.Body)
 	if err != nil {
 		log.Printf("Could not set layer: %v", err)
 		w.WriteHeader(http.StatusBadRequest)
